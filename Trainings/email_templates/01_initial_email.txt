@@ -3,6 +3,7 @@ Send Date: [Week 0 Date]
 Subject: Action Needed: [Semester] Trainings
 
 Hello everyone,
+
 It’s time to start preparing for our [Semester] trainings!
 Please take a moment to fill out the [Training Spreadsheet Link] spreadsheet by [Due Date].
 You will need to fill out the date and time, and double check the title, description, and host.
