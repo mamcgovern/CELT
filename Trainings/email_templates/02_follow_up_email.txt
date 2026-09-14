@@ -1,0 +1,9 @@
+Recipients: celt-cdq@iastate.edu
+Send Date: [Week 3 Date]
+Subject: Reminder: [Semester] Trainings
+
+Hello All!
+
+Just a friendly reminder that your [Semester] training schedule is due [Due Date]. Please make sure to update the [Training Spreadsheet Link] spreadsheet.
+
+Thank you!
