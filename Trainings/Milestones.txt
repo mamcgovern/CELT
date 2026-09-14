@@ -1,0 +1,32 @@
+MILESTONES = [
+    {
+        "task": "Send Initial Email",
+        "week": 0,
+        "description": "Send the initial email to CELT-CDQ asking them to fill out the training schedule for the upcoming semester"
+    },
+    {
+        "task": "Reminder Email",
+        "week": 3,
+        "description": "Send a reminder to CELT-CDQ members who have not yet completed the required information."
+    },
+    {
+        "task": "Due Date",
+        "week": 4,
+        "description": "Deadline for CELT-CDQ members to submit their training information."
+    },
+    {
+        "task": "Make Trainings",
+        "week": 5,
+        "description": "Create the teams meetings for the trainings based on the information submitted by CELT-CDQ members."
+    },
+    {
+        "task": "Send Email",
+        "week": 6,
+        "description": "Send CELT central (Linds, Lisa, Krista) an email with their completed training information and any next steps."
+    },
+    {
+        "task": "Due Date for Schedule",
+        "week": 7,
+        "description": "Final deadline for the training schedule to be completed and ready for the upcoming term."
+    },
+]

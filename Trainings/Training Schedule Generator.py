@@ -1,10 +1,39 @@
 import os
+import calendar
 import tkinter as tk
 from datetime import datetime, timedelta
 from tkinter import messagebox
 
-from tkcalendar import DateEntry
 
+# ---------------------------
+# Helpers
+# ---------------------------
+
+def center_window(win, width=450, height=350):
+    win.update_idletasks()
+    sw = win.winfo_screenwidth()
+    sh = win.winfo_screenheight()
+
+    x = int((sw - width) / 2)
+    y = int((sh - height) / 2)
+
+    win.geometry(
+        f"{width}x{height}+{x}+{y}"
+    )
+
+
+def format_date(date):
+    return date.strftime(
+        "%A, %B %d, %Y"
+    ).replace(
+        " 0",
+        " "
+    )
+
+
+# ---------------------------
+# Schedule Configuration
+# ---------------------------
 
 MILESTONES = [
     {
@@ -40,43 +69,68 @@ MILESTONES = [
 ]
 
 
-def format_date(date):
-    """Format a date without a leading zero on the day."""
-    return date.strftime("%A, %B %d, %Y").replace(" 0", " ")
-
+# ---------------------------
+# Schedule Generation
+# ---------------------------
 
 def generate_schedule(schedule_due_date):
-    """Generate all milestone dates based on the Week 7 due date."""
     schedule = []
 
-    for task, week in MILESTONES:
-        weeks_before_due = 7 - week
-        date = schedule_due_date - timedelta(weeks=weeks_before_due)
+    for milestone in MILESTONES:
+        weeks_before_due = 7 - milestone["week"]
+
+        date = schedule_due_date - timedelta(
+            weeks=weeks_before_due
+        )
 
         schedule.append({
-            "task": task,
-            "week": week,
+            "task": milestone["task"],
+            "week": milestone["week"],
+            "description": milestone["description"],
             "date": date
         })
 
     return schedule
 
 
+# ---------------------------
+# Schedule File
+# ---------------------------
+
 def create_schedule_file(semester, schedule):
-    """Create the semester folder and formatted schedule.txt file."""
 
-    script_folder = os.path.dirname(os.path.abspath(__file__))
-    folder_name = semester.strip()
-    folder_path = os.path.join(script_folder, folder_name)
+    script_folder = os.path.dirname(
+        os.path.abspath(__file__)
+    )
 
-    os.makedirs(folder_path, exist_ok=True)
+    folder_path = os.path.join(
+        script_folder,
+        semester
+    )
 
-    file_path = os.path.join(folder_path, "schedule.txt")
+    os.makedirs(
+        folder_path,
+        exist_ok=True
+    )
+
+    file_path = os.path.join(
+        folder_path,
+        "schedule.txt"
+    )
 
     first_date = schedule[0]["date"]
     final_date = schedule[-1]["date"]
 
-    with open(file_path, "w", encoding="utf-8") as file:
+    with open(
+        file_path,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        # ---------------------------
+        # Header
+        # ---------------------------
+
         file.write("=" * 45 + "\n")
         file.write("           TRAINING SCHEDULE\n")
         file.write(f"           {semester.upper()}\n")
@@ -86,7 +140,12 @@ def create_schedule_file(semester, schedule):
         file.write(
             f"Schedule Due Date: {format_date(final_date)}\n"
         )
+
         file.write("\n")
+
+        # ---------------------------
+        # At-a-Glance
+        # ---------------------------
 
         file.write("-" * 45 + "\n")
         file.write("AT-A-GLANCE TIMELINE\n")
@@ -106,8 +165,13 @@ def create_schedule_file(semester, schedule):
         )
 
         for item in schedule:
-            date_text = item["date"].strftime("%A, %B %d")
-            date_text = date_text.replace(" 0", " ")
+
+            date_text = item["date"].strftime(
+                "%A, %B %d"
+            ).replace(
+                " 0",
+                " "
+            )
 
             file.write(
                 f"{item['week']:<7}"
@@ -117,16 +181,38 @@ def create_schedule_file(semester, schedule):
 
         file.write("\n")
 
+        # ---------------------------
+        # Detailed Timeline
+        # ---------------------------
+
         file.write("-" * 45 + "\n")
         file.write("DETAILED TIMELINE\n")
         file.write("-" * 45 + "\n")
         file.write("\n")
 
         for item in schedule:
-            file.write(f"Week {item['week']}\n")
-            file.write(f"{item['task']}\n")
-            file.write(f"{format_date(item['date'])}\n")
+
+            file.write(
+                f"Week {item['week']}\n"
+            )
+
+            file.write(
+                f"{item['task']}\n"
+            )
+
+            file.write(
+                f"{format_date(item['date'])}\n"
+            )
+
+            file.write(
+                f"{item['description']}\n"
+            )
+
             file.write("\n")
+
+        # ---------------------------
+        # Summary
+        # ---------------------------
 
         file.write("-" * 45 + "\n")
         file.write("SUMMARY\n")
@@ -134,11 +220,17 @@ def create_schedule_file(semester, schedule):
         file.write("\n")
 
         file.write("First Action:\n")
-        file.write(f"{format_date(first_date)}\n")
+        file.write(
+            f"{format_date(first_date)}\n"
+        )
+
         file.write("\n")
 
         file.write("Final Due Date:\n")
-        file.write(f"{format_date(final_date)}\n")
+        file.write(
+            f"{format_date(final_date)}\n"
+        )
+
         file.write("\n")
 
         file.write("Timeline:\n")
@@ -147,181 +239,385 @@ def create_schedule_file(semester, schedule):
     return file_path
 
 
-def generate_button_clicked():
-    """Generate the schedule when the button is clicked."""
+# ---------------------------
+# Calendar Popup
+# ---------------------------
 
-    semester = semester_entry.get().strip()
+class CalendarPopup:
 
-    if not semester:
-        messagebox.showerror(
-            "Missing Semester",
-            "Please enter a semester, such as Fall 2026."
+    def __init__(
+        self,
+        parent,
+        callback,
+        selected_date
+    ):
+
+        self.parent = parent
+        self.callback = callback
+        self.selected_date = selected_date
+
+        self.year = selected_date.year
+        self.month = selected_date.month
+
+        self.window = tk.Toplevel(
+            parent
         )
-        return
 
-    schedule_due_date = due_date_picker.get_date()
+        self.window.title(
+            "Select Date"
+        )
 
-    schedule_due_datetime = datetime.combine(
-        schedule_due_date,
-        datetime.min.time()
+        self.window.resizable(
+            False,
+            False
+        )
+
+        self.window.transient(
+            parent
+        )
+
+        self.create_calendar()
+
+        center_window(
+            self.window,
+            450,
+            285
+        )
+
+        self.window.grab_set()
+
+    def create_calendar(self):
+
+        header = tk.Frame(
+            self.window
+        )
+
+        header.pack(
+            fill="x",
+            padx=10,
+            pady=10
+        )
+
+        tk.Button(
+            header,
+            text="<",
+            width=2,
+            command=self.previous_month
+        ).pack(
+            side="left"
+        )
+
+        self.month_label = tk.Label(
+            header,
+            font=("Arial", 12, "bold")
+        )
+
+        self.month_label.pack(
+            side="left",
+            expand=True
+        )
+
+        tk.Button(
+            header,
+            text=">",
+            width=3,
+            command=self.next_month
+        ).pack(
+            side="right"
+        )
+
+        self.calendar_frame = tk.Frame(
+            self.window
+        )
+
+        self.calendar_frame.pack(
+            padx=10,
+            pady=5
+        )
+
+        self.update_calendar()
+
+    def update_calendar(self):
+
+        for widget in self.calendar_frame.winfo_children():
+            widget.destroy()
+
+        self.month_label.config(
+            text=(
+                f"{calendar.month_name[self.month]} "
+                f"{self.year}"
+            )
+        )
+
+        weekdays = [
+            "Mon",
+            "Tue",
+            "Wed",
+            "Thu",
+            "Fri",
+            "Sat",
+            "Sun"
+        ]
+
+        for column, day in enumerate(weekdays):
+
+            tk.Label(
+                self.calendar_frame,
+                text=day,
+                width=3,
+                font=("Arial", 9, "bold")
+            ).grid(
+                row=0,
+                column=column,
+                padx=1,
+                pady=3
+            )
+
+        month_days = calendar.monthcalendar(
+            self.year,
+            self.month
+        )
+
+        for row, week in enumerate(
+            month_days,
+            start=1
+        ):
+
+            for column, day in enumerate(week):
+
+                if day == 0:
+                    continue
+
+                date = datetime(
+                    self.year,
+                    self.month,
+                    day
+                ).date()
+
+                button = tk.Button(
+                    self.calendar_frame,
+                    text=str(day),
+                    width=2,
+                    command=lambda d=date:
+                        self.select_date(d)
+                )
+
+                if date == self.selected_date:
+                    button.config(
+                        relief="sunken"
+                    )
+
+                button.grid(
+                    row=row,
+                    column=column,
+                    padx=1,
+                    pady=1
+                )
+
+    def previous_month(self):
+
+        if self.month == 1:
+            self.month = 12
+            self.year -= 1
+        else:
+            self.month -= 1
+
+        self.update_calendar()
+
+    def next_month(self):
+
+        if self.month == 12:
+            self.month = 1
+            self.year += 1
+        else:
+            self.month += 1
+
+        self.update_calendar()
+
+    def select_date(self, date):
+
+        self.callback(date)
+
+        self.window.grab_release()
+        self.window.destroy()
+
+
+# ---------------------------
+# GUI
+# ---------------------------
+
+def get_inputs():
+
+    root = tk.Tk()
+
+    root.title(
+        "Training Schedule Generator"
     )
 
-    schedule = generate_schedule(schedule_due_datetime)
-
-    file_path = create_schedule_file(
-        semester,
-        schedule
+    center_window(
+        root,
+        450,
+        300
     )
 
-    messagebox.showinfo(
-        "Schedule Created",
-        f"Your schedule has been created successfully.\n\n"
-        f"Folder: {semester}\n"
-        f"File: schedule.txt\n\n"
-        f"Location:\n{file_path}"
+    result = {
+        "semester": None,
+        "due_date": None
+    }
+
+    # ---------------------------
+    # Semester
+    # ---------------------------
+
+    tk.Label(
+        root,
+        text="Semester:"
+    ).pack(
+        pady=(20, 3)
     )
 
+    semester_entry = tk.Entry(
+        root,
+        width=30
+    )
 
-# --------------------------------------------------
-# Main Window
-# --------------------------------------------------
+    semester_entry.pack()
+
+    # ---------------------------
+    # Due Date
+    # ---------------------------
+
+    tk.Label(
+        root,
+        text="Due Date for Schedule:"
+    ).pack(
+        pady=(15, 3)
+    )
+
+    date_frame = tk.Frame(
+        root
+    )
+
+    date_frame.pack()
+
+    selected_date = {
+        "value": datetime.now().date()
+    }
+
+    date_label = tk.Label(
+        date_frame,
+        text=selected_date["value"].strftime(
+            "%m/%d/%Y"
+        ),
+        width=12,
+        relief="sunken",
+        anchor="w"
+    )
+
+    date_label.pack(
+        side="left"
+    )
+
+    def update_date(date):
+
+        selected_date["value"] = date
+
+        date_label.config(
+            text=date.strftime(
+                "%m/%d/%Y"
+            )
+        )
+
+    tk.Button(
+        date_frame,
+        text="Select Date",
+        command=lambda: CalendarPopup(
+            root,
+            update_date,
+            selected_date["value"]
+        )
+    ).pack(
+        side="left",
+        padx=(5, 0)
+    )
+
+    # ---------------------------
+    # Submit
+    # ---------------------------
+
+    def submit():
+
+        semester = semester_entry.get().strip()
+
+        if not semester:
+
+            messagebox.showerror(
+                "Error",
+                "Enter semester"
+            )
+
+            return
+
+        result["semester"] = semester
+        result["due_date"] = selected_date["value"]
+
+        root.destroy()
+
+    tk.Button(
+        root,
+        text="Generate Schedule",
+        command=submit
+    ).pack(
+        pady=25
+    )
+
+    root.mainloop()
+
+    return result
+
+
+# ---------------------------
+# Run
+# ---------------------------
+
+inputs = get_inputs()
+
+if not inputs["semester"]:
+    raise SystemExit(0)
+
+semester = inputs["semester"]
+schedule_due_date = inputs["due_date"]
+
+
+# ---------------------------
+# Generate
+# ---------------------------
+
+schedule_due_datetime = datetime.combine(
+    schedule_due_date,
+    datetime.min.time()
+)
+
+schedule = generate_schedule(
+    schedule_due_datetime
+)
+
+file_path = create_schedule_file(
+    semester,
+    schedule
+)
+
+
+# ---------------------------
+# Done
+# ---------------------------
 
 root = tk.Tk()
-root.title("Training Schedule Generator")
-root.geometry("500x350")
-root.resizable(False, False)
+root.withdraw()
 
-
-# --------------------------------------------------
-# Title
-# --------------------------------------------------
-
-title_label = tk.Label(
-    root,
-    text="Training Schedule Generator",
-    font=("Arial", 20, "bold")
-)
-title_label.pack(pady=(30, 10))
-
-
-# --------------------------------------------------
-# Description
-# --------------------------------------------------
-
-description_label = tk.Label(
-    root,
-    text="Enter the semester and schedule due date.",
-    font=("Arial", 11)
-)
-description_label.pack(pady=(0, 25))
-
-
-# --------------------------------------------------
-# Semester
-# --------------------------------------------------
-
-semester_frame = tk.Frame(root)
-semester_frame.pack(pady=10)
-
-semester_label = tk.Label(
-    semester_frame,
-    text="Semester:",
-    font=("Arial", 11)
-)
-semester_label.grid(
-    row=0,
-    column=0,
-    padx=(0, 10)
+messagebox.showinfo(
+    "Done",
+    f"Saved to:\n{file_path}"
 )
 
-semester_entry = tk.Entry(
-    semester_frame,
-    width=25,
-    font=("Arial", 11)
-)
-semester_entry.grid(
-    row=0,
-    column=1
-)
-
-semester_entry.insert(
-    0,
-    "Fall 2026"
-)
-
-
-# --------------------------------------------------
-# Due Date
-# --------------------------------------------------
-
-due_date_frame = tk.Frame(root)
-due_date_frame.pack(pady=10)
-
-due_date_label = tk.Label(
-    due_date_frame,
-    text="Due Date for Schedule:",
-    font=("Arial", 11)
-)
-due_date_label.grid(
-    row=0,
-    column=0,
-    padx=(0, 10)
-)
-
-due_date_picker = DateEntry(
-    due_date_frame,
-    width=18,
-    font=("Arial", 11),
-    date_pattern="mm/dd/yyyy",
-    borderwidth=1,
-)
-
-due_date_picker.grid(
-    row=0,
-    column=1
-)
-
-# Configure the calendar popup after it is created.
-calendar = due_date_picker._calendar
-
-calendar.configure(
-    foreground="#ffffff",
-    background="#2b2b2b",
-    headersforeground="#ffffff",
-    headersbackground="#3a3a3a",
-    selectforeground="#ffffff",
-    selectbackground="#0078d7",
-    normalforeground="#ffffff",
-    normalbackground="#2b2b2b",
-    weekendforeground="#ffffff",
-    weekendbackground="#2b2b2b",
-    othermonthforeground="#aaaaaa",
-    othermonthbackground="#2b2b2b",
-    othermonthweforeground="#aaaaaa",
-    othermonthwebackground="#2b2b2b",
-)
-
-
-# --------------------------------------------------
-# Generate Button
-# --------------------------------------------------
-
-generate_button = tk.Button(
-    root,
-    text="Generate Schedule",
-    font=("Arial", 12, "bold"),
-    padx=20,
-    pady=10,
-    command=generate_button_clicked
-)
-
-generate_button.pack(
-    pady=35
-)
-
-
-# --------------------------------------------------
-# Start Application
-# --------------------------------------------------
-
-root.mainloop()
+root.destroy()
