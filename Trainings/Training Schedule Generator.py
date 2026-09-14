@@ -4,6 +4,11 @@ import tkinter as tk
 from datetime import datetime, timedelta
 from tkinter import messagebox
 
+from docx import Document
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+
 
 # ---------------------------
 # Helpers
@@ -77,10 +82,14 @@ def generate_schedule(schedule_due_date):
     schedule = []
 
     for milestone in MILESTONES:
-        weeks_before_due = 7 - milestone["week"]
 
-        date = schedule_due_date - timedelta(
-            weeks=weeks_before_due
+        weeks_before_due = (
+            7 - milestone["week"]
+        )
+
+        date = (
+            schedule_due_date
+            - timedelta(weeks=weeks_before_due)
         )
 
         schedule.append({
@@ -97,7 +106,10 @@ def generate_schedule(schedule_due_date):
 # Schedule File
 # ---------------------------
 
-def create_schedule_file(semester, schedule):
+def create_schedule_file(
+    semester,
+    schedule
+):
 
     script_folder = os.path.dirname(
         os.path.abspath(__file__)
@@ -133,12 +145,15 @@ def create_schedule_file(semester, schedule):
 
         file.write("=" * 45 + "\n")
         file.write("           TRAINING SCHEDULE\n")
-        file.write(f"           {semester.upper()}\n")
+        file.write(
+            f"           {semester.upper()}\n"
+        )
         file.write("=" * 45 + "\n")
         file.write("\n")
 
         file.write(
-            f"Schedule Due Date: {format_date(final_date)}\n"
+            f"Schedule Due Date: "
+            f"{format_date(final_date)}\n"
         )
 
         file.write("\n")
@@ -237,6 +252,408 @@ def create_schedule_file(semester, schedule):
         file.write("7 weeks\n")
 
     return file_path
+
+
+# ---------------------------
+# Word Hyperlink
+# ---------------------------
+
+def add_hyperlink(
+    paragraph,
+    text,
+    url
+):
+
+    part = paragraph.part
+
+    relationship_id = part.relate_to(
+        url,
+        RT.HYPERLINK,
+        is_external=True
+    )
+
+    hyperlink = OxmlElement(
+        "w:hyperlink"
+    )
+
+    hyperlink.set(
+        qn("r:id"),
+        relationship_id
+    )
+
+    run = OxmlElement(
+        "w:r"
+    )
+
+    run_properties = OxmlElement(
+        "w:rPr"
+    )
+
+    color = OxmlElement(
+        "w:color"
+    )
+
+    color.set(
+        qn("w:val"),
+        "0563C1"
+    )
+
+    underline = OxmlElement(
+        "w:u"
+    )
+
+    underline.set(
+        qn("w:val"),
+        "single"
+    )
+
+    run_properties.append(
+        color
+    )
+
+    run_properties.append(
+        underline
+    )
+
+    run.append(
+        run_properties
+    )
+
+    text_element = OxmlElement(
+        "w:t"
+    )
+
+    text_element.text = text
+
+    run.append(
+        text_element
+    )
+
+    hyperlink.append(
+        run
+    )
+
+    paragraph._p.append(
+        hyperlink
+    )
+
+
+# ---------------------------
+# Template Metadata
+# ---------------------------
+
+def parse_template(
+    template_text
+):
+
+    metadata = {}
+    body_lines = []
+
+    metadata_fields = [
+        "Recipients",
+        "Send Date",
+        "Subject"
+    ]
+
+    in_body = False
+
+    for line in template_text.splitlines():
+
+        stripped = line.strip()
+
+        if not in_body:
+
+            found_metadata = False
+
+            for field in metadata_fields:
+
+                prefix = f"{field}:"
+
+                if stripped.startswith(
+                    prefix
+                ):
+
+                    metadata[field] = (
+                        stripped[
+                            len(prefix):
+                        ].strip()
+                    )
+
+                    found_metadata = True
+                    break
+
+            if found_metadata:
+                continue
+
+            if stripped == "":
+                continue
+
+            in_body = True
+
+        if in_body:
+            body_lines.append(line)
+
+    return metadata, body_lines
+
+
+# ---------------------------
+# Email Template Replacement
+# ---------------------------
+
+def replace_placeholders(
+    text,
+    semester,
+    schedule
+):
+
+    dates = {
+        item["week"]: item["date"]
+        for item in schedule
+    }
+
+    replacements = {
+        "[Semester]": semester,
+        "[Week 0 Date]": format_date(
+            dates[0]
+        ),
+        "[Week 3 Date]": format_date(
+            dates[3]
+        ),
+        "[Week 6 Date]": format_date(
+            dates[6]
+        ),
+        "[Due Date]": format_date(
+            dates[4]
+        )
+    }
+
+    for placeholder, value in replacements.items():
+
+        text = text.replace(
+            placeholder,
+            value
+        )
+
+    return text
+
+
+# ---------------------------
+# Create Email DOCX
+# ---------------------------
+
+def create_email_docx(
+    template_path,
+    output_path,
+    semester,
+    schedule,
+    spreadsheet_link
+):
+
+    with open(
+        template_path,
+        "r",
+        encoding="utf-8"
+    ) as file:
+
+        template_text = file.read()
+
+    metadata, body_lines = parse_template(
+        template_text
+    )
+
+    required_metadata = [
+        "Recipients",
+        "Send Date",
+        "Subject"
+    ]
+
+    for field in required_metadata:
+
+        if field not in metadata:
+
+            raise ValueError(
+                f"Missing '{field}:' "
+                f"in {os.path.basename(template_path)}"
+            )
+
+    recipients = replace_placeholders(
+        metadata["Recipients"],
+        semester,
+        schedule
+    )
+
+    send_date = replace_placeholders(
+        metadata["Send Date"],
+        semester,
+        schedule
+    )
+
+    subject = replace_placeholders(
+        metadata["Subject"],
+        semester,
+        schedule
+    )
+
+    document = Document()
+
+    # ---------------------------
+    # Email Metadata
+    # ---------------------------
+
+    metadata_paragraphs = [
+        ("To:", recipients),
+        ("Send Date:", send_date),
+        ("Subject:", subject)
+    ]
+
+    for label, value in metadata_paragraphs:
+
+        paragraph = document.add_paragraph()
+
+        run = paragraph.add_run(
+            f"{label} "
+        )
+
+        run.bold = True
+
+        paragraph.add_run(
+            value
+        )
+
+    document.add_paragraph()
+
+    # ---------------------------
+    # Email Body
+    # ---------------------------
+
+    for line in body_lines:
+
+        paragraph = document.add_paragraph()
+
+        placeholder = (
+            "[Training Spreadsheet Link]"
+        )
+
+        line = replace_placeholders(
+            line,
+            semester,
+            schedule
+        )
+
+        if placeholder in line:
+
+            parts = line.split(
+                placeholder
+            )
+
+            for index, part in enumerate(parts):
+
+                if part:
+                    paragraph.add_run(
+                        part
+                    )
+
+                if index < len(parts) - 1:
+
+                    add_hyperlink(
+                        paragraph,
+                        f"{semester} Trainings",
+                        spreadsheet_link
+                    )
+
+        else:
+
+            paragraph.add_run(
+                line
+            )
+
+    document.save(
+        output_path
+    )
+
+    return output_path
+
+
+# ---------------------------
+# Email Files
+# ---------------------------
+
+def create_email_files(
+    semester,
+    schedule,
+    spreadsheet_link
+):
+
+    script_folder = os.path.dirname(
+        os.path.abspath(__file__)
+    )
+
+    templates_folder = os.path.join(
+        script_folder,
+        "email_templates"
+    )
+
+    output_folder = os.path.join(
+        script_folder,
+        semester
+    )
+
+    os.makedirs(
+        output_folder,
+        exist_ok=True
+    )
+
+    templates = [
+        (
+            "01_initial_email.txt",
+            "01_initial_email.docx"
+        ),
+        (
+            "02_follow_up_email.txt",
+            "02_follow_up_email.docx"
+        ),
+        (
+            "03_training_links_email.txt",
+            "03_training_links_email.docx"
+        )
+    ]
+
+    output_files = []
+
+    for template_name, output_name in templates:
+
+        template_path = os.path.join(
+            templates_folder,
+            template_name
+        )
+
+        output_path = os.path.join(
+            output_folder,
+            output_name
+        )
+
+        if not os.path.exists(
+            template_path
+        ):
+
+            raise FileNotFoundError(
+                f"Email template not found:\n\n"
+                f"{template_path}"
+            )
+
+        create_email_docx(
+            template_path,
+            output_path,
+            semester,
+            schedule,
+            spreadsheet_link
+        )
+
+        output_files.append(
+            output_path
+        )
+
+    return output_files
 
 
 # ---------------------------
@@ -359,7 +776,9 @@ class CalendarPopup:
             "Sun"
         ]
 
-        for column, day in enumerate(weekdays):
+        for column, day in enumerate(
+            weekdays
+        ):
 
             tk.Label(
                 self.calendar_frame,
@@ -383,7 +802,9 @@ class CalendarPopup:
             start=1
         ):
 
-            for column, day in enumerate(week):
+            for column, day in enumerate(
+                week
+            ):
 
                 if day == 0:
                     continue
@@ -403,6 +824,7 @@ class CalendarPopup:
                 )
 
                 if date == self.selected_date:
+
                     button.config(
                         relief="sunken"
                     )
@@ -417,9 +839,12 @@ class CalendarPopup:
     def previous_month(self):
 
         if self.month == 1:
+
             self.month = 12
             self.year -= 1
+
         else:
+
             self.month -= 1
 
         self.update_calendar()
@@ -427,9 +852,12 @@ class CalendarPopup:
     def next_month(self):
 
         if self.month == 12:
+
             self.month = 1
             self.year += 1
+
         else:
+
             self.month += 1
 
         self.update_calendar()
@@ -456,13 +884,14 @@ def get_inputs():
 
     center_window(
         root,
-        450,
-        300
+        500,
+        375
     )
 
     result = {
         "semester": None,
-        "due_date": None
+        "due_date": None,
+        "spreadsheet_link": None
     }
 
     # ---------------------------
@@ -542,12 +971,40 @@ def get_inputs():
     )
 
     # ---------------------------
+    # Spreadsheet Link
+    # ---------------------------
+
+    tk.Label(
+        root,
+        text="Training Spreadsheet Link:"
+    ).pack(
+        pady=(15, 3)
+    )
+
+    spreadsheet_entry = tk.Entry(
+        root,
+        width=55
+    )
+
+    spreadsheet_entry.pack()
+
+    # ---------------------------
     # Submit
     # ---------------------------
 
     def submit():
 
-        semester = semester_entry.get().strip()
+        semester = (
+            semester_entry
+            .get()
+            .strip()
+        )
+
+        spreadsheet_link = (
+            spreadsheet_entry
+            .get()
+            .strip()
+        )
 
         if not semester:
 
@@ -558,8 +1015,22 @@ def get_inputs():
 
             return
 
+        if not spreadsheet_link:
+
+            messagebox.showerror(
+                "Error",
+                "Enter the training spreadsheet link"
+            )
+
+            return
+
         result["semester"] = semester
-        result["due_date"] = selected_date["value"]
+        result["due_date"] = (
+            selected_date["value"]
+        )
+        result["spreadsheet_link"] = (
+            spreadsheet_link
+        )
 
         root.destroy()
 
@@ -587,10 +1058,11 @@ if not inputs["semester"]:
 
 semester = inputs["semester"]
 schedule_due_date = inputs["due_date"]
+spreadsheet_link = inputs["spreadsheet_link"]
 
 
 # ---------------------------
-# Generate
+# Generate Schedule
 # ---------------------------
 
 schedule_due_datetime = datetime.combine(
@@ -602,10 +1074,39 @@ schedule = generate_schedule(
     schedule_due_datetime
 )
 
-file_path = create_schedule_file(
-    semester,
-    schedule
-)
+
+# ---------------------------
+# Create Files
+# ---------------------------
+
+try:
+
+    schedule_file_path = (
+        create_schedule_file(
+            semester,
+            schedule
+        )
+    )
+
+    email_files = create_email_files(
+        semester,
+        schedule,
+        spreadsheet_link
+    )
+
+except Exception as error:
+
+    root = tk.Tk()
+    root.withdraw()
+
+    messagebox.showerror(
+        "Error",
+        f"Something went wrong:\n\n{error}"
+    )
+
+    root.destroy()
+
+    raise SystemExit(1)
 
 
 # ---------------------------
@@ -617,7 +1118,8 @@ root.withdraw()
 
 messagebox.showinfo(
     "Done",
-    f"Saved to:\n{file_path}"
+    f"Files saved to:\n"
+    f"{os.path.dirname(schedule_file_path)}"
 )
 
 root.destroy()
